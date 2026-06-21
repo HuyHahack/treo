@@ -1,4 +1,5 @@
 import os
+import audioop  # 👈 BẮT BUỘC: import trước discord để thay thế module bị thiếu
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -18,8 +19,7 @@ intents.guilds = True
 class VoiceBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=intents)
-        self.tree = app_commands.CommandTree(self)
-        # Lưu trạng thái: user_id -> channel_id (người đã treo bot)
+        # self.tree đã có sẵn từ lớp cha, không được gán lại
         self.treo_owner = {}
 
     async def setup_hook(self):
@@ -35,18 +35,15 @@ async def on_ready():
 # ----- LỆNH /treo -----
 @bot.tree.command(name="treo", description="Treo bot vào voice channel của bạn")
 async def treo(interaction: discord.Interaction):
-    # 1. Kiểm tra user có đang ở voice không
     if not interaction.user.voice:
         await interaction.response.send_message("❌ Bạn phải ở trong voice channel để dùng lệnh này!", ephemeral=True)
         return
 
     guild = interaction.guild
-    # 2. Kiểm tra bot đã ở voice chưa
     if guild.voice_client is not None:
         await interaction.response.send_message("❌ Bot đã được treo ở một voice channel rồi!", ephemeral=True)
         return
 
-    # 3. Kiểm tra user này đã từng treo bot chưa (đề phòng)
     if interaction.user.id in bot.treo_owner:
         await interaction.response.send_message("❌ Bạn đã treo bot trước đó! Dùng /thoat để thả bot ra.", ephemeral=True)
         return
@@ -65,17 +62,14 @@ async def thoat(interaction: discord.Interaction):
     guild = interaction.guild
     voice_client = guild.voice_client
 
-    # 1. Kiểm tra bot có đang ở voice không
     if voice_client is None:
         await interaction.response.send_message("❌ Bot hiện không ở trong voice channel nào!", ephemeral=True)
         return
 
-    # 2. Kiểm tra người dùng có phải chủ nhân đã treo bot không
     if interaction.user.id not in bot.treo_owner:
         await interaction.response.send_message("❌ Bạn không có quyền thả bot ra! Chỉ người đã dùng /treo mới được dùng /thoat.", ephemeral=True)
         return
 
-    # 3. Kiểm tra user có đang ở cùng voice với bot không (optional, nhưng nên có)
     if not interaction.user.voice or interaction.user.voice.channel.id != voice_client.channel.id:
         await interaction.response.send_message("❌ Bạn phải ở cùng voice channel với bot để thả bot ra!", ephemeral=True)
         return
