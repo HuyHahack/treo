@@ -33,72 +33,71 @@ bot = VoiceBot()
 async def on_ready():
     print(f"✅ {bot.user} đã sẵn sàng!")
 
-# ----- SỰ KIỆN TỰ ĐỘNG XÓA OWNER KHI BOT RỜI VOICE -----
+# ----- SỰ KIỆN TỰ ĐỘNG XÓA OWNER KHI BOT RỜI VOICE (do bị kick hoặc lỗi) -----
 @bot.event
 async def on_voice_state_update(member, before, after):
-    # Nếu là bot và rời khỏi voice
     if member.id == bot.user.id and after.channel is None:
-        # Xóa tất cả owner (vì bot rời do bị kick hoặc mất kết nối)
         if bot.treo_owner:
             bot.treo_owner.clear()
-            print("🗑️ Đã xóa toàn bộ owner do bot rời voice bất thường.")
+            print("🗑️ Đã xóa toàn bộ owner do bot rời voice.")
 
-# ----- LỆNH SLASH -----
+# ----- LỆNH /treo (public) -----
 @bot.tree.command(name="treo", description="Treo bot vào voice channel của bạn")
 async def treo(interaction: discord.Interaction):
+    # 1. Kiểm tra user có ở voice không
     if not interaction.user.voice:
-        await interaction.response.send_message("❌ Bạn phải ở trong voice channel!", ephemeral=True)
+        await interaction.response.send_message("❌ Bạn phải ở trong voice channel để dùng lệnh này!")
         return
 
     guild = interaction.guild
     voice_client = guild.voice_client
 
-    # Kiểm tra bot đã ở voice chưa
+    # 2. Nếu bot đã ở voice → báo lỗi
     if voice_client is not None:
-        await interaction.response.send_message("❌ Bot đã được treo ở một voice channel rồi!", ephemeral=True)
+        await interaction.response.send_message("❌ Bot đã được treo ở một voice channel rồi!")
         return
 
-    # Kiểm tra user đã treo bot trước đó chưa
+    # 3. Kiểm tra user này đã treo trước đó chưa
     if interaction.user.id in bot.treo_owner:
-        await interaction.response.send_message("❌ Bạn đã treo bot trước đó! Dùng /thoat để thả bot ra.", ephemeral=True)
+        await interaction.response.send_message("❌ Bạn đã treo bot trước đó! Dùng /thoat để thả bot ra.")
         return
 
     channel = interaction.user.voice.channel
     try:
-        # Không dùng reconnect=True để tránh tự động kết nối lại
+        # KHÔNG dùng reconnect=True để tránh tự động kết nối lại sau restart
         await channel.connect(timeout=30, reconnect=False)
         bot.treo_owner[interaction.user.id] = channel.id
         await interaction.response.send_message(f"✅ Đã treo bot vào voice **{channel.name}** thành công!")
     except Exception as e:
-        await interaction.response.send_message(f"❌ Lỗi khi treo bot: {e}", ephemeral=True)
+        await interaction.response.send_message(f"❌ Lỗi khi treo bot: {e}")
 
+# ----- LỆNH /thoat (public) -----
 @bot.tree.command(name="thoat", description="Cho bot rời khỏi voice channel")
 async def thoat(interaction: discord.Interaction):
     guild = interaction.guild
     voice_client = guild.voice_client
 
     if voice_client is None:
-        await interaction.response.send_message("❌ Bot hiện không ở trong voice channel!", ephemeral=True)
+        await interaction.response.send_message("❌ Bot hiện không ở trong voice channel nào!")
         return
 
     if interaction.user.id not in bot.treo_owner:
-        await interaction.response.send_message("❌ Bạn không có quyền thả bot! Chỉ người đã /treo mới được /thoat.", ephemeral=True)
+        await interaction.response.send_message("❌ Bạn không có quyền thả bot! Chỉ người đã dùng /treo mới được /thoat.")
         return
 
     if not interaction.user.voice or interaction.user.voice.channel.id != voice_client.channel.id:
-        await interaction.response.send_message("❌ Bạn phải ở cùng voice với bot để thả bot!", ephemeral=True)
+        await interaction.response.send_message("❌ Bạn phải ở cùng voice channel với bot để thả bot ra!")
         return
 
     try:
         await voice_client.disconnect()
-        # Xóa owner ngay sau khi disconnect thành công
         if interaction.user.id in bot.treo_owner:
             del bot.treo_owner[interaction.user.id]
         await interaction.response.send_message("✅ Bot đã rời voice channel!")
     except Exception as e:
-        await interaction.response.send_message(f"❌ Lỗi khi thả bot: {e}", ephemeral=True)
+        await interaction.response.send_message(f"❌ Lỗi khi thả bot: {e}")
 
-# ------------------- WEB SERVER -------------------
+# ------------------- WEB SERVER (cho Render, giữ cổng) -------------------
 app = Flask(__name__)
 
 @app.route('/')
