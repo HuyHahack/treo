@@ -21,7 +21,7 @@ intents.guilds = True
 class VoiceBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=intents)
-        self.treo_owner = {}  # user_id -> channel_id
+        self.treo_owner = {}  # Lưu user_id đã treo (chỉ để tham khảo)
 
     async def setup_hook(self):
         await self.tree.sync()
@@ -33,7 +33,7 @@ bot = VoiceBot()
 async def on_ready():
     print(f"✅ {bot.user} đã sẵn sàng!")
 
-# ----- SỰ KIỆN TỰ ĐỘNG XÓA OWNER KHI BOT RỜI VOICE (do bị kick hoặc lỗi) -----
+# Xóa owner khi bot rời voice (do bị kick hoặc lỗi)
 @bot.event
 async def on_voice_state_update(member, before, after):
     if member.id == bot.user.id and after.channel is None:
@@ -41,10 +41,9 @@ async def on_voice_state_update(member, before, after):
             bot.treo_owner.clear()
             print("🗑️ Đã xóa toàn bộ owner do bot rời voice.")
 
-# ----- LỆNH /treo (public) -----
+# ----- LỆNH /treo (chỉ 1 lần, lưu owner) -----
 @bot.tree.command(name="treo", description="Treo bot vào voice channel của bạn")
 async def treo(interaction: discord.Interaction):
-    # 1. Kiểm tra user có ở voice không
     if not interaction.user.voice:
         await interaction.response.send_message("❌ Bạn phải ở trong voice channel để dùng lệnh này!")
         return
@@ -52,27 +51,29 @@ async def treo(interaction: discord.Interaction):
     guild = interaction.guild
     voice_client = guild.voice_client
 
-    # 2. Nếu bot đã ở voice → báo lỗi
     if voice_client is not None:
         await interaction.response.send_message("❌ Bot đã được treo ở một voice channel rồi!")
         return
 
-    # 3. Kiểm tra user này đã treo trước đó chưa
     if interaction.user.id in bot.treo_owner:
         await interaction.response.send_message("❌ Bạn đã treo bot trước đó! Dùng /thoat để thả bot ra.")
         return
 
     channel = interaction.user.voice.channel
     try:
-        # KHÔNG dùng reconnect=True để tránh tự động kết nối lại sau restart
         await channel.connect(timeout=30, reconnect=False)
         bot.treo_owner[interaction.user.id] = channel.id
         await interaction.response.send_message(f"✅ Đã treo bot vào voice **{channel.name}** thành công!")
     except Exception as e:
-        await interaction.response.send_message(f"❌ Lỗi khi treo bot: {e}")
+        # Nếu bot vẫn kết nối được dù có exception, coi như thành công
+        if guild.voice_client is not None:
+            bot.treo_owner[interaction.user.id] = channel.id
+            await interaction.response.send_message(f"✅ Đã treo bot vào voice **{channel.name}** thành công!")
+        else:
+            await interaction.response.send_message(f"❌ Lỗi khi treo bot: {e}")
 
-# ----- LỆNH /thoat (public) -----
-@bot.tree.command(name="thoat", description="Cho bot rời khỏi voice channel")
+# ----- LỆNH /thoat (ai cũng dùng được, bỏ kiểm tra owner) -----
+@bot.tree.command(name="thoat", description="Cho bot rời khỏi voice channel (ai cũng có thể dùng)")
 async def thoat(interaction: discord.Interaction):
     guild = interaction.guild
     voice_client = guild.voice_client
@@ -81,23 +82,25 @@ async def thoat(interaction: discord.Interaction):
         await interaction.response.send_message("❌ Bot hiện không ở trong voice channel nào!")
         return
 
-    if interaction.user.id not in bot.treo_owner:
-        await interaction.response.send_message("❌ Bạn không có quyền thả bot! Chỉ người đã dùng /treo mới được /thoat.")
-        return
-
+    # Không cần kiểm tra quyền sở hữu nữa
+    # Tuy nhiên, để an toàn, vẫn yêu cầu người dùng ở cùng voice với bot
     if not interaction.user.voice or interaction.user.voice.channel.id != voice_client.channel.id:
         await interaction.response.send_message("❌ Bạn phải ở cùng voice channel với bot để thả bot ra!")
         return
 
     try:
         await voice_client.disconnect()
+        # Xóa owner tương ứng (nếu có)
         if interaction.user.id in bot.treo_owner:
             del bot.treo_owner[interaction.user.id]
+        # Nếu không có owner cụ thể, nhưng bot rời, ta vẫn clear toàn bộ để reset
+        else:
+            bot.treo_owner.clear()
         await interaction.response.send_message("✅ Bot đã rời voice channel!")
     except Exception as e:
         await interaction.response.send_message(f"❌ Lỗi khi thả bot: {e}")
 
-# ------------------- WEB SERVER (cho Render, giữ cổng) -------------------
+# ------------------- WEB SERVER -------------------
 app = Flask(__name__)
 
 @app.route('/')
